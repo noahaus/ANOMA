@@ -1,0 +1,122 @@
+---
+title: "ANOMA - Outlier Detection through Machine Learning"
+author: "Noah A. Legall"
+date: "2/8/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Outlier Detection
+
+Outlier detection is an important problem in multiple domains in Computer Science, including machine learning.DBSCAN is a density based clustering algorithm that can help detect outlier data observations, but requires the calculation of two parameters, minpts and epsilon.
+When we are not sure about the data we have, inferring these parameters is challenging. 
+For this project, we will utilize a Genetic Algorithm approach to find the optimal combination of the two parameters, given our data.
+
+## DBSCAN Algorithm
+
+In order to cluster to find outliers, an intuitive approach is to realize data points should be close to each at least in euclidean space. DBSCAN does just that, and will exclude points that do not go well in any cluster. Those points will be our outliers.
+
+A great explanation of the algorithm is here: https://towardsdatascience.com/dbscan-algorithm-complete-guide-and-application-with-python-scikit-learn-d690cbae4c5d
+
+
+## Genetic Algorithm
+
+In choosing our parameter values, finding the combination of minPts and epsilion would take considerable time. So in order to find a 'good enough' solution, we will have to guess in an educated way (heuristically). 
+
+Genetic Algorithms do just that, utilizing methods that make species best adapted to their environment. 
+
+Five phases are considered in a genetic algorithm:
+Initial population
+Fitness function
+Selection
+Crossover
+Mutation
+
+In Short, the algorithm will take parameters and promote the ones that maximize metrics of  cluster validity. A detailed explanation will come from here: https://towardsdatascience.com/introduction-to-genetic-algorithms-including-example-code-e396e98d8bf3
+
+## ANOMA Demo
+
+let's generate an example dataset, normalize it, and then plot it:
+
+```{r}
+library(GA)
+library(dbscan)
+library(cluster)
+
+normalize <- function(x) {
+  return ((x - mean(x)) / (sd(x)))
+}
+
+x_1 <- rnorm(100,5,2)
+y_1 <- rnorm(100,10,1)
+
+
+x_2 <- rnorm(100,16,5)
+y_2 <- rnorm(100,3,0.5)
+x <- c(x_1,x_2)
+y <- c(y_1,y_2)
+
+df <- data.frame(x,y)
+df <- rbind(df,c(100,23),c(-42,6))
+
+#normalize data
+for(i in names(df)){
+  df[,i] <- normalize(df[,i])
+}
+plot(df)
+```
+
+Checks out, looks like there are two distinct clusters here. Now, we need to run the Genetic Algorithm. But first, we need a function to optimize. A natural way to determine if our parameters are good is to compute the within cluster sum of squares. This will see how defined the clusters we infer are based on the Genetic Algorithm.
+
+```{r}
+euc.dist <- function(x1, x2){
+  sqrt(sum((x1 - x2)^2))
+} 
+
+wcss <- function(df_1,db_1){
+  #map clusters to data
+  df_1$cluster <- db_1$cluster
+  clust_no <- unique(df_1$cluster)
+  
+  ss <- 0
+  
+  for(i in 1:length(clust_no)){
+    col_mean <- colMeans(df_1[df_1$cluster == i,])
+    df_sub <- df_1[df_1$cluster == i,]
+    for(j in 1:length(df_sub)){
+      ss <- ss + euc.dist(df_sub[j,],col_mean)
+    }
+  }
+  
+  ss
+}
+
+f <- function(x1,x2){
+  db <- dbscan::dbscan(df,eps = x1,minPts =ceiling(x2))
+  if(max(db$cluster) == 0){
+    1000
+  } else {
+  wcss(df,db)}
+}
+
+```
+
+Now we are ready to run the Genetic Algorithm, let's see how we do!
+
+```{r}
+GA <- ga(type = "real-valued", fitness = function(x) -f(x[1],x[2]),
+         lower = c(1,3), upper = c(10,20), pmutation = 0.5,
+         popSize = 50, maxiter = 1000, run = 50 )
+summary(GA)
+```
+
+Here is a visual representation of how we know the parameters we now have are good:
+
+```{r echo=FALSE}
+plot(GA)
+db <- dbscan::dbscan(df,eps = GA@solution[1,1],minPts =ceiling(GA@solution[1,2]))
+clusplot(df,db$cluster, color=TRUE, main = "")
+```
